@@ -1,0 +1,28 @@
+*.iml
+.gradle
+/local.properties
+/keystore.properties
+# idea folder stuff details at https://proandroiddev.com/deep-dive-into-idea-folder-in-android-studio-53f867cf7b70
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/idea/gradle.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+
+
+
+# Built application files
+*.apk
+*.ap_
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
