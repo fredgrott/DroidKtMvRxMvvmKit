@@ -1,33 +1,548 @@
+/*
+    Copyright 2018 Fred Grott
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+ */
+
+
 apply plugin: 'com.android.application'
 
 apply plugin: 'kotlin-android'
 
 apply plugin: 'kotlin-android-extensions'
 
+apply plugin: 'org.jetbrains.dokka-android'
+
+apply plugin: "io.gitlab.arturbosch.detekt"
+
+apply plugin: "com.diffplug.gradle.spotless"
+
+apply plugin: "com.jaredsburrows.spoon"
+
+apply plugin: 'jacoco'
+// dont delete this yet despite the as3.4 inspection note saying that you can
+project.extensions.extraProperties.set('SpotBugsTask', com.github.spotbugs.SpotBugsTask)
+apply plugin: "com.github.spotbugs"
+
+apply plugin: 'kotlin-kapt'
+
+apply plugin: "de.mannodermaus.android-junit5"
+
+
+apply plugin: 'de.hannesstruss.godot'
+
+apply plugin: "build-time-tracker"
+
+def configs = rootProject.ext.config
+def droidxlibs = rootProject.ext.androidxlibs
+def thirdpartylibs = rootProject.ext.otherlibs
+def junitfivelibs = rootProject.ext.junitfive
+
+// versiioning
+ext.versionMajor = 1
+ext.versionMinor = 0
+ext.versionPatch = 0
+ext.versionClassifier = null
+ext.isSnapshot = true
+
+/*
+NOTE: Leaving off apk signing because most of the time the correct setup in dealing with both git repos and
+      CI servers is to only sign the apk manually by projject lead on their local machine
+
+      Currently gradle pitest plugin incompat with android and fork of that plugin incompat with
+      junit5 required setup for kotlin so at this point due to having to do additional
+      junit4 stuff to support it not suporting it right now
+ */
+
+
 android {
-    compileSdkVersion 28
+    compileSdkVersion configs.compileSdkVersion
     defaultConfig {
-        applicationId "com.example.droidktmvrxmvvmkit"
-        minSdkVersion 21
-        targetSdkVersion 28
-        versionCode 1
-        versionName "1.0"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        applicationId "${configs.appIdName}"
+        minSdkVersion configs.minSdkVersion
+        targetSdkVersion configs.targetSdkVersion
+        versionCode generateVersionCode()
+        versionName generateVersionName()
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        // (Required) Make sure to use the AndroidJUnitRunner, of a subclass of it
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        // (Required) Connect JUnit 5 to the runner
+        testInstrumentationRunnerArgument "runnerBuilder", "de.mannodermaus.junit5.AndroidJUnit5Builder"
+
     }
+    lintOptions {
+        baseline file("lint-baseline.xml")
+        // Turns off checks for the issue IDs you specify.
+        disable 'TypographyFractions','TypographyQuotes'
+        // Turns on checks for the issue IDs you specify. These checks are in
+        // addition to the default lint checks.
+        enable 'RtlHardcoded','RtlCompat', 'RtlEnabled'
+        // To enable checks for only a subset of issue IDs and ignore all others,
+        // list the issue IDs with the 'check' property instead. This property overrides
+        // any issue IDs you enable or disable using the properties above.
+        check 'NewApi', 'InlinedApi'
+        // If set to true, turns off analysis progress reporting by lint.
+        quiet true
+        // if set to true (default), stops the build if errors are found.
+        abortOnError false
+        // if true, only report errors.
+        ignoreWarnings true
+    }
+
     buildTypes {
+        debug {
+            testCoverageEnabled true
+            applicationIdSuffix ".debug"
+            debuggable true
+        }
+
         release {
+            // ms windows does support this unless yu add the helper gradle plugin that runs JGIT
+            buildConfigField("String", "GIT_HASH", rootProject.ext.gitSha)
+
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+
+        miniDebug {
+            initWith debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'),
+                    'proguard-rules.pro'
+            matchingFallbacks = ['debug']
+        }
+
+    }
+    flavorDimensions "testing", "design"
+    productFlavors {
+
+
+
+        stagging {
+            dimension 'testing'
+            // default minSkdkVersion for release stagging
+            minSdkVersion configs.minSdkVersion
+            applicationIdSuffix ".stage"
+            versionNameSuffix "-stage"
+        }
+
+
+        // so we can run junit5 android testing to get access to better parameterized testing
+        tdd{
+            dimension 'testing'
+            minSdkVersion 24
+            applicationIdSuffix ".tdd"
+            versionNameSuffix "-tdd"
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+        }
+        // to run spek testing
+        bdd {
+            dimension 'testing'
+            minSdkVersion 24
+            applicationIdSuffix ".bdd"
+            versionNameSuffix "-bdd"
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+        }
+        // to run debugbottle
+        debugbottle{
+            dimension 'testing'
+            minSdkVersion 22
+            applicationIdSuffix ".debugbottle"
+            versionNameSuffix "-debugbottle"
+        }
+        // to run uiautomator
+        uiauto {
+            dimension 'testing'
+            applicationIdSuffix ".uiauto"
+            versionNameSuffix "-uiauto"
+        }
+        ///u ses  debug overview of Rhym
+        //https://github.com/chris-horner/RhythmSticks
+        //  https://github.com/Actinarium/Rhythm
+        designdebug{
+            dimension "design"
+            applicationIdSuffix ".designdebug"
+            versionNameSuffix "-designdebug"
+        }
+    }
+    dokka {
+        outputFormat = 'html'
+        outputDirectory = "$buildDir/javadoc"
+    }
+
+    testOptions {
+        execution 'ANDROID_TEST_ORCHESTRATOR'
+        animationsDisabled true
+        unitTests {
+            includeAndroidResources = true
+        }
+        junitPlatform {
+            filters {
+                engines {
+                    include 'spek2'
+                }
+            }
+            jacocoOptions {
+                // here goes all jacoco config, for example
+                html.enabled = true
+                xml.enabled = true
+                csv.enabled = true
+                unitTests.all {
+                    testLogging.events = ["passed", "skipped", "failed"]
+                }
+            }
+        }
+    }
+
+
+}
+
+detekt {
+    defaultProfile {
+        input = "$projectDir/src/main/java"
+        config = "$projectDir/default-detekt-config.yml"
+        filters = ".*/resources/.*,.*/tmp/.*"
+        output = "$projectDir/build/reports/detekt"
+        baseline = file("$projectDir/build/reports/baseline.xml")
+    }
+
+}
+
+spotless {
+    kotlin {
+        target '**/*.kt'
+        licenseHeaderFile "$rootDir/license.kt.txt"
     }
 }
+
+
+
+
+
+spotbugs {
+
+
+    excludeFilter = file("${rootProject}/tools/findbugs-filter.xml")
+
+    // Search better
+    effort = 'max'
+    // Report all
+    reportLevel = 'low'
+}
+
+def spotbugsTask = task('spotbugs') {
+    description 'Run spotbugs'
+    group 'Verification'
+}
+
+def spotbugsReports = [ 'Html', 'Xml' ]
+
+
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation"org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'androidx.appcompat:appcompat:1.0.0'
-    implementation 'androidx.core:core-ktx:1.0.0'
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test:runner:1.1.0'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0'
+    implementation droidxlibs.androidxAppcompat
+    testImplementation thirdpartylibs.junitJunit
+    androidTestImplementation droidxlibs.androidxTestRunner
+    androidTestUtil droidxlibs.androidxTestOrchestrator
+    androidTestImplementation droidxlibs.androidxTestEspressoEsspressoCore
+    androidTestImplementation thirdpartylibs.spoonSpoonClient
+    androidTestImplementation thirdpartylibs.spoonSpoonRunner
+    //how to set this up is at https://github.com/chris-horner/RhythmSticks
+    designdebugImplementation thirdpartylibs.rhythmRhythm
+    implementation thirdpartylibs.androidMvrx
+    implementation thirdpartylibs.kotterKnife
+    implementation thirdpartylibs.androidExpoxy
+    // Add the annotation processor if you are using Epoxy's annotations (recommended)
+    kapt thirdpartylibs.androidExpoxyProcessor
+    kapt "org.jetbrains.kotlin.kap:1.3.0"
+    implementation(thirdpartylibs.androidExpoxy) { exclude group: 'com.android.support' }
+    implementation thirdpartylibs.rxjavaRxjava
+    implementation thirdpartylibs.rxjavaRxKotlin
+    implementation thirdpartylibs.rxjavaAndroid
+    implementation thirdpartylibs.rxgroupsAndroid
+    // (Required) Writing and executing Unit Tests on the JUnit Platform
+    testImplementation junitfivelibs.junitJupiterApi
+    testRuntimeOnly junitfivelibs.junitJupiterEngine
+
+    // (Optional) If you need "Parameterized Tests"
+    testImplementation junitfivelibs.junitJupiterParams
+    testRuntimeOnly junitfivelibs.junitVintage
+
+    //note that Grox is also available without Rx dependencies
+    implementation thirdpartylibs.groxCoreRx
+    //Grox commands artifacts do depend on Rx (1 or 2)
+    implementation thirdpartylibs.groxCommandsRx
+    implementation thirdpartylibs.groxCommandsRxTwo
+    implementation thirdpartylibs.transitionX
+    implementation thirdpartylibs.kovenantKovenant
+    implementation thirdpartylibs.rhythmRhythm
+    implementation thirdpartylibs.rhythmSticks
+    debugImplementation thirdpartylibs.debugbottleRuntime
+    releaseImplementation thirdpartylibs.debugbottleNoopJava
+    testImplementation thirdpartylibs.debugbottleNoopJava
+    releaseImplementation thirdpartylibs.debugbottleNoopKotlin
+    testImplementation thirdpartylibs.debugbottleNoopKotlin
+    implementation thirdpartylibs.kotlinCoroutinesCore
+    implementation thirdpartylibs.kotlinCoroutinesAndroid
+    implementation thirdpartylibs.okthttp
+    testImplementation thirdpartylibs.okhttpMockwebserver
+    implementation thirdpartylibs.retrofit
+    implementation thirdpartylibs.okio
+    // heap analyzer see https://github.com/square/haha
+    // for how to use only should have this on debug buildtypes
+    debugImplementation thirdpartylibs.haha
+    implementation thirdpartylibs.retrofittwoKotlinCoroutines
+    // (Required) Writing tests for JUnit Jupiter
+    androidTestImplementation junitfivelibs.junitJupiterApi
+    // (Required) The instrumentation test companion library
+    androidTestImplementation junitfivelibs.junitJunitfiveInstrumentedRunner
+
+    // (Required) Runtime dependencies to orchestrate the execution on-device
+    androidTestRuntimeOnly junitfivelibs.junitJupiterEngine
+    androidTestRuntimeOnly junitfivelibs.junitPlatformRunner
+    androidTestRuntimeOnly junitfivelibs.junitJunitfiveInstrumentedRunner
+    implementation thirdpartylibs.rxbinding
+    implementation thirdpartylibs.rxbindingCore
+    implementation thirdpartylibs.rxbindingRecycleview
+
 }
+
+kapt {
+    correctErrorTypes = true
+}
+
+//spotbugs taskk setup detials at https://gist.github.com/mik9/fdde79052fef7f03c4325734701a39d7
+android.applicationVariants.all { variant ->
+    println "*********" + variant.description + "**********"
+    def variants = variant.baseName.split("-")
+    def apkName = rootProject.ext.config.apkName
+    apkName += variants[0]
+    apkName += "-v" + android.defaultConfig.versionName
+
+    if (variant.buildType.name == "release") {
+        apkName += "-RELEASE.apk"
+    } else {
+        apkName += "-SNAPSHOT.apk"
+    }
+    println "*********" + "$project.buildDir/apk/" + apkName + "**********"
+
+    variant.outputs.all {
+        outputFileName = "${apkName}.apk"
+    }
+    variant.outputs.all {
+        output ->
+            variant.assemble.doLast {
+                if ( variant.mappingFile != null &&
+                        variant.mappingFile.exists() ) {
+                    copy {
+                        from variant.mappingFile
+                        into output.outputFile.parent
+                    }
+                }
+            }
+    }
+    spotbugsReports.each { reportType ->
+        task("spotbugs${reportType}${variant.name.capitalize()}", type: SpotBugsTask, dependsOn: variant.javaCompiler) {
+            description "Run spotbugs for ${variant.name}"
+            group 'Verification'
+
+            classes = fileTree("build/intermediates/classes/${variant.flavorName}/${variant.buildType.name}/") + fileTree("build/tmp/kotlin-classes/${variant.name}/")
+            source = variant.javaCompiler.source
+
+            classpath = variant.javaCompiler.classpath.asFileTree
+
+            reports {
+                html.enabled = reportType == 'Html'
+                xml.enabled = reportType == 'Xml'
+
+                html.stylesheet resources.text.fromFile('cq-configs/findbugs/findbugs-html.xsl')
+            }
+        }
+    }
+}
+project.afterEvaluate {
+    // Grab all build types and product flavors
+    def buildTypes = android.buildTypes.collect { type -> type.name }
+    def productFlavors = android.productFlavors.collect { flavor -> flavor.name }
+
+    // When no product flavors defined, use empty
+    if (!productFlavors) productFlavors.add('')
+
+    productFlavors.each { productFlavorName ->
+        buildTypes.each { buildTypeName ->
+            def sourceName, sourcePath
+            if (!productFlavorName) {
+                sourceName = sourcePath = "${buildTypeName}"
+            } else {
+                sourceName = "${productFlavorName}${buildTypeName.capitalize()}"
+                sourcePath = "${productFlavorName}/${buildTypeName}"
+            }
+            def testTaskName = "test${sourceName.capitalize()}UnitTest"
+
+            // Create coverage task of form 'testFlavorTypeCoverage' depending on 'testFlavorTypeUnitTest'
+            task "${testTaskName}Coverage"(type: JacocoReport, dependsOn: "$testTaskName") {
+                group = "Reporting"
+                description = "Generate Jacoco coverage reports on the ${sourceName.capitalize()} build."
+
+                classDirectories = fileTree(
+                        dir: "${project.buildDir}/intermediates/classes/${sourcePath}",
+                        excludes: ['**/R.class',
+                                   '**/R$*.class',
+                                   '**/*$ViewInjector*.*',
+                                   '**/*$ViewBinder*.*',
+                                   '**/BuildConfig.*',
+                                   '**/Manifest*.*']
+                )
+
+                def coverageSourceDirs = [
+                        "src/main/java",
+                        "src/$productFlavorName/java",
+                        "src/$buildTypeName/java"
+                ]
+                additionalSourceDirs = files(coverageSourceDirs)
+                sourceDirectories = files(coverageSourceDirs)
+                executionData = files("${project.buildDir}/jacoco/${testTaskName}.exec")
+
+                reports {
+                    xml.enabled = true
+                    html.enabled = true
+                }
+            }
+        }
+    }
+}
+
+spoon {
+    debug = true
+
+    baseOutputDir = file("$buildDir/custom-report-dir")
+
+    if (project.hasProperty("spoonClassName")) {
+        className = project.spoonClassName
+
+        if (project.hasProperty("spoonMethodName")) {
+            methodName = project.spoonMethodName
+        }
+    }
+
+    instrumentationArgs = ["foo:bar"]
+
+    adbTimeout = 30
+
+//  codeCoverage = true
+
+    grantAllPermissions = true
+}
+
+configurations.all {
+    resolutionStrategy {
+        //force deps.orgJacocoAgent
+        // force deps.orgJacocoAnt
+    }
+}
+task checkReports() {
+    doLast {
+        assert project.tasks.spoonDebugAndroidTest != null
+        assert project.file("$buildDir/custom-report-dir").exists()
+        assert project.file("$buildDir/custom-report-dir/debug").exists()
+//    assert project.file("$buildDir/custom-report-dir/debug/coverage").exists()
+    }
+}
+
+private Integer generateVersionCode() {
+    return rootProject.ext.config.minSdkVersion*10000000 + ext.versionMajor * 10000 + ext.versionMinor * 100 + ext.versionPatch
+}
+
+private String generateVersionName() {
+    String versionName = "${ext.versionMajor}.${ext.versionMinor}.${ext.versionPatch}"
+    if (ext.versionClassifier == null && ext.isSnapshot) {
+        ext.versionClassifier = "SNAPSHOT"
+    }
+
+    if (ext.versionClassifier != null) {
+        versionName += "-" + ext.versionClassifier
+    }
+    return versionName
+}
+
+// part of versioning to get the apk filename modified right for product flavors
+android.applicationVariants.all { variant ->
+    println "*********" + variant.description + "**********"
+    def variants = variant.baseName.split("-")
+    def apkName = rootProject.ext.config.apkName
+    apkName += variants[0]
+    apkName += "-v" + android.defaultConfig.versionName
+
+    if (variant.buildType.name == "release") {
+        apkName += "-RELEASE.apk"
+    } else {
+        apkName += "-SNAPSHOT.apk"
+    }
+    println "*********" + "$project.buildDir/apk/" + apkName + "**********"
+
+    variant.outputs.all {
+        outputFileName = "${apkName}.apk"
+    }
+    variant.outputs.all {
+        output ->
+            variant.assemble.doLast {
+                if ( variant.mappingFile != null &&
+                        variant.mappingFile.exists() ) {
+                    copy {
+                        from variant.mappingFile
+                        into output.outputFile.parent
+                    }
+                }
+            }
+    }
+
+
+}
+
+
+
+
+
+tasks.withType(Test) {
+    jacoco.includeNoLocationClasses = true
+}
+
+buildtimetracker {
+    reporters {
+        csv {
+            output "build/times.csv"
+            append true
+            header false
+        }
+
+        summary {
+            ordered false
+            threshold 50
+            barstyle "unicode"
+        }
+
+        csvSummary {
+            csv "build/times.csv"
+        }
+    }
+}
+
