@@ -335,6 +335,7 @@ dependencies {
     implementation "com.google.code.gson:gson:2.8.5"
     implementation thirdpartylibs.retrofittwoGsonConvertos
     implementation 'com.github.ajalt:timberkt:1.5.1'
+    implementation "androidx.legacy:legacy-support-v4:1.0.0"
 
 }
 
