@@ -15,6 +15,7 @@ limitations under the License.
 package com.example.droidktmvrxmvvmkit
 
 import android.app.Application
+import com.github.ajalt.timberkt.Timber
 
 
 class App : Application() {
@@ -22,5 +23,8 @@ class App : Application() {
         super.onCreate()
         //instantiate db
         Dependencies.getDatabase(this)
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
     }
 }
