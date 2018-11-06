@@ -27,4 +27,8 @@ class App : Application() {
             Timber.plant(Timber.DebugTree())
         }
     }
+    // use companion objects to get access to fileds via other classes
+    companion object {
+        const val TAG = "MyAppRx"
+    }
 }

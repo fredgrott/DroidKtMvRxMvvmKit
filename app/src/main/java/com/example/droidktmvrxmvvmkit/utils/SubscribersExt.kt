@@ -14,6 +14,7 @@ limitations under the License.
 */
 package com.example.droidktmvrxmvvmkit.utils
 
+import com.example.droidktmvrxmvvmkit.App
 import io.reactivex.Completable
 import io.reactivex.Maybe
 import io.reactivex.Observable
@@ -24,7 +25,7 @@ import io.reactivex.rxkotlin.subscribeBy
 import com.google.gson.Gson
 import com.github.ajalt.timberkt.*
 
-const val TAG = "MyAppRx"
+
 
 /*
    Instead of call stacks I use TimberKT
@@ -66,11 +67,11 @@ fun <T : Any> Maybe<T>.subscribeBy(
     .subscribeBy(onError, onComplete, onSuccess)
 
 
-private fun Any.logRxOnSuccess() = Timber.tag("$TAG onSuccess").d(toReadableResult())
+private fun Any.logRxOnSuccess() = Timber.tag("${App.TAG} onSuccess").d(toReadableResult())
 
-private fun Any.logRxOnNext() = Timber.tag( "$TAG onNext").d(toReadableResult())
+private fun Any.logRxOnNext() = Timber.tag( "${App.TAG} onNext").d(toReadableResult())
 
-private fun Throwable.logRxOnError() = Timber.tag("$TAG OnError").d(message, cause)
+private fun Throwable.logRxOnError() = Timber.tag("${App.TAG} OnError").d(message, cause)
 
 private fun Any.toReadableResult() =
     "${if (this is List<*> && this.isNotEmpty()) "${javaClass.simpleName}<${this.first()?.javaClass?.simpleName}>"
